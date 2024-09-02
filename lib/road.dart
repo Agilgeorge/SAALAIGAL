@@ -1,7 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:geolocator/geolocator.dart';
 import 'report.dart';
-class Roadpage extends StatelessWidget {
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const MaterialApp(
+    home: Roadpage(),
+  ));
+}
+
+class Roadpage extends StatefulWidget {
   const Roadpage({super.key});
+
+  @override
+  _RoadpageState createState() => _RoadpageState();
+}
+
+class _RoadpageState extends State<Roadpage> {
+  final _database = FirebaseDatabase.instance.reference();
+  final _formKey = GlobalKey<FormState>();
+  String _complaintText = '';
+  Position? _currentPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -58,8 +80,16 @@ class Roadpage extends StatelessWidget {
                             IconButton(
                               icon: const Icon(Icons.location_pin),
                               iconSize: 60,
-                              onPressed: () {
-                                // Add your code here
+                              onPressed: () async {
+                                _getCurrentLocation();
+                                await _database.child('reports').push().set({
+                                  'location': _currentPosition != null
+                                      ? {
+                                          'latitude': _currentPosition.latitude,
+                                          'longitude': _currentPosition.longitude,
+                                        }
+                                      : null,
+                                });
                               },
                             ),
                             const SizedBox(height: 10),
@@ -69,24 +99,46 @@ class Roadpage extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20.0),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'complaint box',
+                    Form(
+                      key: _formKey,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                        child: TextFormField(
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'complaint box',
+                          ),
+                          maxLines: 3,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter a complaint';
+                            }
+                            return null;
+                          },
+                          onSaved: (value) => _complaintText = value!,
                         ),
-                        maxLines: 3,
                       ),
                     ),
-
                     const SizedBox(height: 20),
                     ElevatedButton(
-                      onPressed: () {
-                        // Add your code here
-                        Navigator.push(context,
-                            MaterialPageRoute(builder: (context) => reportpage())
-                        );
+                      onPressed: () async {
+                        if (_formKey.currentState!.validate()) {
+                          _formKey.currentState!.save();
+                          await _database.child('reports').push().set({
+                            'complaint': _complaintText,
+                            'timestamp': DateTime.now().millisecondsSinceEpoch,
+                            'location': _currentPosition != null
+                                ? {
+                                    'latitude': _currentPosition.latitude,
+                                    'longitude': _currentPosition.longitude,
+                                  }
+                                : null,
+                          });
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => reportpage()),
+                          );
+                        }
                       },
                       child: const Text('raise report'),
                     ),
@@ -99,10 +151,11 @@ class Roadpage extends StatelessWidget {
       ),
     );
   }
-}
 
-void main() {
-  runApp(const MaterialApp(
-    home: Roadpage(),
-  ));
+  Future<void> _getCurrentLocation() async {
+    final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    setState(() {
+      _currentPosition = position;
+    });
+  }
 }
